@@ -1,0 +1,147 @@
+openapi: 3.1.0
+info:
+  title: Racha — API de ingestão
+  version: 0.1.0
+  description: |
+    API para restaurantes e PDVs enviarem comandas à plataforma.
+    Autenticação por chave de API da fonte de integração (header `Authorization: Bearer <chave>`).
+    Todos os valores monetários são inteiros em centavos de BRL.
+servers:
+  - url: https://api.racha.app
+security:
+  - chaveApi: []
+paths:
+  /v1/eventos:
+    post:
+      summary: Envia um ou mais eventos de comanda
+      operationId: enviarEventos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventos]
+              properties:
+                eventos:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    $ref: '../schemas/evento-ingestao.schema.json'
+      responses:
+        '202':
+          description: Eventos aceitos para processamento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadoLote' }
+        '200':
+          description: Todos os eventos já haviam sido recebidos (idempotente)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadoLote' }
+        '400': { $ref: '#/components/responses/Erro' }
+        '401': { $ref: '#/components/responses/Erro' }
+        '429': { $ref: '#/components/responses/Erro' }
+  /v1/comandas/{comanda_external_id}:
+    parameters:
+      - name: comanda_external_id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      summary: Envia o estado completo da comanda (modo snapshot)
+      operationId: enviarSnapshot
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/comanda-canonica.schema.json'
+      responses:
+        '200':
+          description: Snapshot aplicado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComandaResumo' }
+        '409':
+          description: Já existe outra comanda aberta para a mesa
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Erro' }
+        '400': { $ref: '#/components/responses/Erro' }
+        '401': { $ref: '#/components/responses/Erro' }
+    get:
+      summary: Consulta estado da comanda e pagamentos
+      operationId: consultarComanda
+      responses:
+        '200':
+          description: Estado atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ComandaResumo' }
+        '404': { $ref: '#/components/responses/Erro' }
+  /v1/eventos/{id}:
+    get:
+      summary: Consulta o resultado do processamento de um evento
+      operationId: consultarEvento
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Evento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResultadoEvento' }
+        '404': { $ref: '#/components/responses/Erro' }
+components:
+  securitySchemes:
+    chaveApi:
+      type: http
+      scheme: bearer
+  responses:
+    Erro:
+      description: Erro
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Erro' }
+  schemas:
+    Erro:
+      type: object
+      required: [codigo, mensagem]
+      properties:
+        codigo: { type: string, examples: [conflito_comanda_aberta, mesa_desconhecida, payload_invalido] }
+        mensagem: { type: string }
+        detalhes: { type: array, items: { type: object } }
+    ResultadoEvento:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        idempotency_key: { type: string }
+        status: { enum: [recebido, aplicado, rejeitado] }
+        erro: { $ref: '#/components/schemas/Erro' }
+    ResultadoLote:
+      type: object
+      properties:
+        resultados:
+          type: array
+          items: { $ref: '#/components/schemas/ResultadoEvento' }
+    ComandaResumo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        comanda_external_id: { type: string }
+        status: { enum: [aberta, em_pagamento, quitada, fechada, cancelada] }
+        total_centavos: { type: integer }
+        pago_centavos: { type: integer }
+        nao_atribuido_centavos: { type: integer }
+        participantes: { type: integer }
+        url_mesa: { type: string, format: uri }

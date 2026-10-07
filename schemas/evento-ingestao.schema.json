@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://racha.app/schemas/evento-ingestao.schema.json",
+  "title": "Evento de ingestão",
+  "type": "object",
+  "required": ["idempotency_key", "tipo", "ocorrido_em", "mesa_ref", "comanda_external_id"],
+  "additionalProperties": false,
+  "properties": {
+    "idempotency_key": { "type": "string", "minLength": 8, "maxLength": 200 },
+    "tipo": {
+      "enum": ["comanda.aberta", "item.adicionado", "item.alterado", "item.cancelado", "ajuste.aplicado", "comanda.fechamento_solicitado", "comanda.cancelada"]
+    },
+    "ocorrido_em": { "type": "string", "format": "date-time" },
+    "mesa_ref": { "type": "string", "minLength": 1 },
+    "comanda_external_id": { "type": "string", "minLength": 1 },
+    "dados": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "tipo": { "enum": ["item.adicionado", "item.alterado"] } } },
+      "then": {
+        "required": ["dados"],
+        "properties": { "dados": { "$ref": "comanda-canonica.schema.json#/$defs/item", "required": ["external_item_id", "descricao", "quantidade", "preco_unitario_centavos"] } }
+      }
+    },
+    {
+      "if": { "properties": { "tipo": { "const": "item.cancelado" } } },
+      "then": {
+        "required": ["dados"],
+        "properties": { "dados": { "type": "object", "required": ["external_item_id"] } }
+      }
+    },
+    {
+      "if": { "properties": { "tipo": { "const": "ajuste.aplicado" } } },
+      "then": {
+        "required": ["dados"],
+        "properties": { "dados": { "$ref": "comanda-canonica.schema.json#/$defs/ajuste" } }
+      }
+    }
+  ]
+}
